@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from contextlib import asynccontextmanager
 
-import httpx
+import httpx2
 import pytest
 import pytest_asyncio
 from mcp import ClientSession
@@ -69,27 +69,26 @@ async def mcp_session(key: str | None):
     """
     from tracely.api import mcp_server
 
-    mcp_server.mcp._session_manager = None
-    mcp_server.mcp.streamable_http_app()
+    mcp_server.streamable_http_app()
     async with mcp_server.mcp.session_manager.run():
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url="http://test",
             headers={"Authorization": f"Bearer {key}"} if key else {},
         ) as http:
-            async with streamable_http_client("http://test/mcp", http_client=http) as (r, w, _):
+            async with streamable_http_client("http://test/mcp", http_client=http) as (r, w):
                 async with ClientSession(r, w) as session:
                     await session.initialize()
                     yield session
 
 
 def payload(result):
-    """FastMCP only derives an output schema from a parameterized return type, so a `-> dict`
-    tool answers with a text block while `-> list[dict]` fills `structuredContent` (and an empty
+    """The MCP server only derives an output schema from a parameterized return type, so a `-> dict`
+    tool answers with a text block while `-> list[dict]` fills `structured_content` (and an empty
     list has no text blocks at all, which is the wrong thing to assert on)."""
-    assert not result.isError, result.content[0].text if result.content else "(no content)"
-    if result.structuredContent is not None:
-        return result.structuredContent["result"]
+    assert not result.is_error, result.content[0].text if result.content else "(no content)"
+    if result.structured_content is not None:
+        return result.structured_content["result"]
     return json.loads(result.content[0].text)
 
 
@@ -132,7 +131,7 @@ async def test_router_validation_reaches_the_caller(client, sync_db, make_worksp
         res = await s.call_tool(
             "create_evaluator", {"name": "Nope", "kind": "structural", "config": {"check": "bogus"}}
         )
-    assert res.isError
+    assert res.is_error
     assert "unknown structural check" in res.content[0].text
 
 
@@ -142,7 +141,7 @@ async def test_key_is_required_and_scoped(client, sync_db, make_workspace):
     await make_workspace("mcp-b", "mcp_key_b", "b@x.test")
 
     async with mcp_session(None) as s:
-        assert (await s.call_tool("list_evaluators", {})).isError
+        assert (await s.call_tool("list_evaluators", {})).is_error
 
     async with mcp_session("mcp_key_a") as s:
         payload(
