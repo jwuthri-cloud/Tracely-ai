@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Tracely backend: FastAPI API + shared domain (ingestion, ClickHouse, registry, OTLP mapping, Celery tasks)."
 requires-python = ">=3.12"
 dependencies = [
-  "pydantic>=2.13.5",
+  "pydantic>=2.14.1",
   "pydantic-settings>=2.3",
   "sqlalchemy>=2.1.1",
   "greenlet>=3.0",
