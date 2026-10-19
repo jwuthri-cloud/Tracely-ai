@@ -16,7 +16,7 @@ dependencies = [
   "boto3>=1.34",
   "opentelemetry-proto>=1.25",
   "celery[redis]>=5.4",
-  "structlog>=24.1",
+  "structlog>=26.1.0",
   "fastapi>=0.111",
   "uvicorn[standard]>=0.52.4",
   # LLM stack: every chat call goes through LangChain v1 `create_agent` on OpenRouter
