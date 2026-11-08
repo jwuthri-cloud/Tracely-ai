@@ -20,7 +20,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 
 from tracely.api.internal_client import api_call, auth_headers_from
@@ -34,20 +35,29 @@ Useful shape of the data: a trace is one agent run (a turn); traces sharing a th
 conversation. A trace FAILS iff a non-advisory evaluator scored it FAIL. Evaluators are either
 `structural` (deterministic checks) or `llm_judge` (a rubric prompt graded by a model)."""
 
-mcp = FastMCP(
-    "tracely",
-    instructions=INSTRUCTIONS,
-    # Every tool authenticates per-request from the caller's header; there is no per-session
-    # state worth keeping, and stateless lets the API scale to more than one replica.
-    stateless_http=True,
-    # FastMCP defaults to DNS-rebinding protection with an allow-list of localhost only, which
-    # 421s every request to a deployed API (`Invalid Host header: api.example.com`). That
-    # protection exists for MCP servers bound to a developer's loopback interface, where a
-    # malicious page can reach the origin and the browser attaches ambient credentials. This
-    # endpoint has no ambient credentials to steal — every call carries an explicit Bearer key,
-    # and CORS already pins which origins a browser may read from.
-    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
-)
+mcp = MCPServer("tracely", instructions=INSTRUCTIONS)
+
+
+def streamable_http_app():
+    """Build the HTTP transport (and with it a fresh `mcp.session_manager`).
+
+    mcp 2.x takes transport settings here rather than in the constructor, and builds a new
+    session manager on every call — so this is the one place they live; `mount()` and the tests
+    both go through it.
+    """
+    return mcp.streamable_http_app(
+        # Every tool authenticates per-request from the caller's header; there is no per-session
+        # state worth keeping, and stateless lets the API scale to more than one replica.
+        stateless_http=True,
+        # Without this the SDK enables DNS-rebinding protection with an allow-list of localhost
+        # only, which 421s every request to a deployed API (`Invalid Host header:
+        # api.example.com`). That protection exists for MCP servers bound to a developer's
+        # loopback interface, where a malicious page can reach the origin and the browser
+        # attaches ambient credentials. This endpoint has no ambient credentials to steal —
+        # every call carries an explicit Bearer key, and CORS already pins which origins a
+        # browser may read from.
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
 
 
 async def _call(ctx: Context, method: str, path: str, ndjson: bool = False, **kw: Any) -> Any:
@@ -60,11 +70,16 @@ async def _call(ctx: Context, method: str, path: str, ndjson: bool = False, **kw
     request = getattr(ctx.request_context, "request", None)
     headers = auth_headers_from(request.headers if request is not None else {})
     if not headers:
-        raise ValueError(
+        raise ToolError(
             "missing credentials: pass your Tracely ingest key as an Authorization: Bearer header "
             "when configuring this MCP server"
         )
-    return await api_call(headers, method, path, ndjson=ndjson, **kw)
+    try:
+        return await api_call(headers, method, path, ndjson=ndjson, **kw)
+    except ValueError as e:
+        # mcp 2.x shows the client only a ToolError's text; any other exception becomes a bare
+        # "Error executing tool X", and the router's 4xx body is what lets the agent self-correct.
+        raise ToolError(str(e)) from e
 
 
 # ── traces ───────────────────────────────────────────────────────────────────
@@ -256,7 +271,7 @@ def mount(app) -> None:
     """
     from starlette.routing import Route
 
-    mcp.streamable_http_app()
+    streamable_http_app()
     app.router.routes.append(
         Route(
             "/mcp",

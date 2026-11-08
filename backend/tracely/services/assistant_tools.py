@@ -18,7 +18,7 @@ Two rules make this work, both learned the hard way:
 3. **No tool argument may be called `config`.** `StructuredTool._arun` takes its own keyword-only
    `config` (the `RunnableConfig`), so an argument of that name is swallowed there and never
    reaches the function — which fails at call time, deep in a tool loop, not at import. Hence
-   `evaluator_config`. The MCP server's twin of this tool can and does call it `config`; FastMCP
+   `evaluator_config`. The MCP server's twin of this tool can and does call it `config`; the MCP SDK
    has no such reserved name.
 
 Deletes are here (the product decision was full access), but the system prompt requires the agent
